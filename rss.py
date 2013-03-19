@@ -179,6 +179,4 @@ while True:
 
 # saving changes 
 ET.ElementTree(feedhist).write(filefeedhist)
-ET.ElementTree(feedlist).write(xmlfeedlist)
-    
-# write some sort of readme, and throw it at someone to use
+ET.ElementTree(feedlist).write(xmlfeedlist) 

@@ -5,6 +5,9 @@ date: 3/18/13
 This program is a rudimentary RSS feed reader, to be run in a terminal command
 line.
 
+Currently, the default directory for subscription and read data to be stored is
+./RSS_Reader_Data/, where the . is the directory rss.py is run from.
+
 Usage: ./rss.py to start
 
 There are five commands:
@@ -17,7 +20,7 @@ There are five commands:
                     in opening a page with the contents of the oldest item in the
                     feed with {name} as a substring of the feed title.
 
-'subscribe {url}:   Typing this command will add a new feed to your subscription
+'subscribe {url}':  Typing this command will add a new feed to your subscription
                     list, and this feed will be included in every future check.
 
 'help':             Displays a brief description of each command's usage.
