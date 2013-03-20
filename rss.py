@@ -4,41 +4,93 @@ import xml.etree.ElementTree as ET
 import urllib.error as err
 import urllib.request as URL
 import webbrowser as WEB
+import datetime as DT
 import subprocess
 import os
 import sys
 
 
-#--------------------------- User-defined Options: -----------------
+#----------------------------- User-defined Options: --------------------------
 # This section can and should be modified by the user:
 data_folder = ".RSS_Reader_Data/"
 subscription_file = "subscriptions.xml"
 history_file = "readhistory.xml"
+updatelen = 7
 
 #---------------------------- Initializing the Program ------------------------
-# this is where the data is saved!
 xmlfeedlist = "{0}{1}".format(data_folder, subscription_file)
 filefeedhist = "{0}{1}".format(data_folder, history_file)
+# namespace for Atom feeds
+atom = "{http://www.w3.org/2005/Atom}"
+
 if os.path.isdir(data_folder):
     pass
 else:
-    print("Data Folder '{0}' does not exist. Creating in current directory.".format(datafolder))
+    print("Data Folder '{0}' does not exist. Creating in current directory.".format(data_folder))
     subprocess.call(["mkdir", "{0}".format(data_folder)])
-if os.path.isfile(xmlfeedlist):
-    try:
-        feedlist = ET.parse(xmlfeedlist).getroot()
-    except ET.ParseError:
-        print("'{0}' corrupted. Please check file.".format(xmlfeedlist))
-        print("Exiting")
-        sys.exit()
-else:
+
+# Google Reader Data Import
+if len(sys.argv) > 1 and sys.argv[1] == "import": 
+    greader = ET.parse(sys.argv[2]).getroot()
     feedlist = ET.Element("feedlist")
+    for outline in greader.findall(".//outline[@type]"):
+        feedurl = outline.get("xmlUrl")
+        feedtitle = outline.get("title")
+        print("Importing {0}".format(feedtitle))
+        feed = ET.SubElement(feedlist, "feed")
+        feed.attrib["title"] = feedtitle.replace("'","&#39;")
+        feed.attrib["htmlUrl"] = outline.get("htmlUrl")
+        # some feedburner feeds don't natively come in xml, so this is to patch that
+        if "feedburner" in feedurl:
+            feedurl = feedurl + "?format=xml"
+        feed.attrib["xmlUrl"] = feedurl 
+        # Google Reader's data does not mark b/w atom and rss feeds, so we check ourselves:
+        try:
+            xmlpage = URL.urlopen(feedurl)
+        except err.URLError:
+            print("No service. Please check network connection.")
+            print("Import terminating.")
+            sys.exit()
+        page = ET.parse(xmlpage).getroot()
+        if page.tag == "{0}feed".format(atom):
+            feed.attrib["type"] = "atom"
+        elif page.tag == "rss":
+            feed.attrib["type"] = "rss"
+        else:
+            print("Unrecognized format for feed '{0}'.".format(feed), file=sys.stderr)
+            feedlist.remove(feed)
+else: 
+    if os.path.isfile(xmlfeedlist):
+        try:
+            feedlist = ET.parse(xmlfeedlist).getroot()
+        except ET.ParseError:
+            print("'{0}' corrupted. Please check file.".format(xmlfeedlist))
+            print("Exiting")
+            sys.exit()
+    else:
+        feedlist = ET.Element("feedlist")
 
 feeddict = {feed.get("title") : (feed.get("xmlUrl"), feed.get("type")) 
         for feed in feedlist.findall(".//feed")}
 
-# namespace for Atom feeds
-atom = "{http://www.w3.org/2005/Atom}"
+# dictionary to translate RSS formatted months to numbers:
+months = { "Jan": 1, "Feb": 2, "Mar": 3, "Apr": 4, "May": 5, "Jun": 6,
+           "Jul": 7, "Aug": 8, "Sep": 9, "Oct": 10, "Nov": 11, "Dec": 12, 
+           "January": 1, "February": 2, "March": 3, "April": 4, "June": 6,
+           "July": 7, "August": 8, "September": 9, "October": 10, "November": 11,
+           "December": 12 }
+# function to translate various date formats to the date type
+def todate(pubdate):
+    if pubdate[0].isalpha(): # Example: Tue, 19 Mar 2013
+        date = pubdate.split(" ")
+        itemdate = DT.date(int(date[3]), months[date[2]], int(date[1]))
+    elif pubdate[0].isdigit(): # Corresponding to ISO 8601
+        if "T" in pubdate:
+            date = pubdate.partition("T")[0].split("-")
+        else:
+            date = pubdate.partition(" ")[0].split("-")
+        itemdate = DT.date(int(date[0]),int(date[1]),int(date[2])) 
+    return itemdate
 
 # build initial read library.
 def buildreadhist():
@@ -51,22 +103,34 @@ def buildreadhist():
             print("Read history build unrecoverable. Exiting.")
             sys.exit()
         page = ET.parse(xmlpage).getroot()
-        feedhist = ET.SubElement(hist, "feed")
-        feedhist.attrib["title"] = feed
-        print("reading", feed)
-        if page.tag == ("{0}feed".format(atom)):
-            # Atom Format   
-            for item in page.findall(".//{0}entry".format(atom)):
+        print("reading", feed.replace("&#39;","'"))
+        bulkupdatehist(feed, hist, page)
+    return hist
+
+# puts all items older than updatelen days ago into history_file
+def bulkupdatehist(feed, hist, page):
+    feedhist = ET.SubElement(hist, "feed")
+    feedhist.attrib["title"] = feed
+    if page.tag == ("{0}feed".format(atom)):
+        # Atom Format   
+        for item in page.findall(".//{0}entry".format(atom)):
+            pubdate = item.findtext("./{0}updated".format(atom))
+            itemdate = todate(pubdate)
+            if itemdate.today() - itemdate > DT.timedelta(days=updatelen):
                 itemhist = ET.SubElement(feedhist, "item")
                 itemhist.attrib["title"] = item.findtext("./{0}title".format(atom))
-        elif page.tag == "rss":
-            # RSS Format
-            for item in page.findall(".//item"):
-                itemhist = ET.SubElement(feedhist, "item")
-                itemhist.attrib["title"] = item.findtext("./title")
-        else:
-            print("Unrecognized format for feed '{0}'.".format(feed), file=sys.stderr)
-    return hist
+    elif page.tag == "rss":
+        # RSS Format
+        for item in page.findall(".//item"):
+            pubdate = item.findtext("./pubDate")
+            if pubdate: # the <pubDate> tag is optional in RSS format
+                itemdate = todate(pubdate)
+                if itemdate.today() - itemdate > DT.timedelta(days=updatelen):
+                    itemhist = ET.SubElement(feedhist, "item")
+                    itemhist.attrib["title"] = item.findtext("./title")
+    else:
+        print("Unrecognized format for feed '{0}'.".format(feed.replace("&#39;","'")))
+        hist.remove(feedhist)
 
 if os.path.isfile(filefeedhist):
     try:
@@ -95,7 +159,10 @@ htmlend = """</body>
 #----------- Functionalities of reader (subscribe, read, check, etc) ------------
 def subscribe(feedurl):
     if not feedurl.startswith("http://"):
-        feedurl = "http://" + feedurl
+        feedurl = "http://" + feedurl 
+    # feedburner feeds aren't always in xml format, so we fix that here
+    if "feedburner" in feedurl:
+        feedurl = feedurl + "?format=xml"
     if feedlist.find("./feed[@xmlUrl='{0}']".format(feedurl)):
         return
     else:
@@ -104,16 +171,16 @@ def subscribe(feedurl):
         except err.URLError:
             print("No service. Please check network connection.")
             print("Subscribe function stopped.")
-            return
+            return 
         page = ET.parse(xmlpage).getroot() 
         if page.tag == ("{0}feed".format(atom)):
             # atom format
-            title = page.findtext("./{0}title".format(atom)).replace("'","")
+            title = page.findtext("./{0}title".format(atom)).replace("'","&#39;")
             htmlurl = page.find("./{0}link".format(atom)).get("href")
             feedtype = "atom"
         elif page.tag == "rss":
             # rss format
-            title = page.findtext("./channel/title").replace("'","")
+            title = page.findtext("./channel/title").replace("'","&#39;")
             htmlurl = page.findtext("./channel/link")
             feedtype = "rss"
         else:
@@ -126,8 +193,7 @@ def subscribe(feedurl):
         feed.attrib["xmlUrl"] = feedurl
         feed.attrib["type"] = feedtype
 
-        curfeedhist = ET.SubElement(feedhist, "feed")
-        curfeedhist.attrib["title"] = title
+        bulkupdatehist(title, feedhist, page)
 
         feeddict.setdefault(title, (feedurl, feedtype))
 
@@ -195,7 +261,7 @@ def check(feedname, toreaddict):
 
     toreaddict[feedname] = unreaditems
     if unreadcount > 0:
-        print(feedname, ": Unread:", unreadcount)
+        print(feedname.replace("&#39;","'"), ": Unread:", unreadcount)
         for item in toreaddict[feedname]:
             print ("    ", item.findtext("./title"))
    
@@ -227,7 +293,7 @@ def read(feedname):
         WEB.open('{0}readitem.html'.format(data_folder))
         os.dup2(oldstdout_fno, 1)
     else:
-        print("No New Items for {0}.".format(feedname))
+        print("No New Items for {0}.".format(feedname.replace("&#39;","'")))
 
 def markread(feedname):
     curfeed = toreaddict[feedname]
@@ -249,7 +315,7 @@ def displayhelp():
     print("See readme for more information and commands.")
 
 def checkall():
-    for feed in feeddict.keys():
+    for feed in feeddict.keys(): 
         check(feed, toreaddict)
 
 def markall(feedname):
@@ -259,39 +325,68 @@ def markall(feedname):
         markread(feedname)
         i += 1
 
+def listall():
+    for feed in feeddict.keys():
+        print(feed.replace("&#39;","'"))
+
+#------------------------ Command Prompt Utilities ----------------------------
+def readprompt(): 
+    usrin = input("> ").partition(" ")
+    return usrin[0], usrin[2]
+
+def shortened(sword, lword):
+    return sword.lower() in lword.lower()
+
+def yesno():
+    yesno = input("Are you sure? (y/n) ")
+    return yesno.startswith("y")
+
+
 #------------------------ Main runtime of program -----------------------------
 checkall()
 exit = False
 while not exit:
-    usrin = input("> ")
-    cmd,_,arg = usrin.partition(" ")
+    cmd,arg = readprompt()
     if cmd == "read":
         for feed in feeddict.keys():
-            if arg.lower() in feed.lower():
+            if shortened(arg, feed):
                 read(feed)
     elif cmd == "check":
         if arg:
             for feed in feeddict.keys():
-                if arg.lower() in feed.lower():
+                if shortened(arg, feed):
                     check(feed, toreaddict)
                     if toreaddict[feed]:
                         pass
                     else:
-                        print("No New Items for {0}.".format(feed))
+                        print("No New Items for {0}.".format(feed.replace("&#39;","'")))
         else:
             checkall()
     elif cmd == "mark":
         for feed in feeddict.keys():
-            if arg.lower() in feed.lower():
+            if shortened(arg, feed):
                 markread(feed)
-    elif cmd == "markall":
-        for feed in feeddict.keys():
-            if arg.lower() in feed.lower():
-                markall(feed)
+    elif cmd == "markall": 
+        if arg:
+            for feed in feeddict.keys():
+                if shortened(arg, feed):
+                    markall(feed)
+        else:
+            print("Marking ALL items from ALL feeds read!")
+            if yesno():
+                for feed in feeddict.keys():
+                    markall(feed)
     elif cmd == "subscribe":
         subscribe(arg)
     elif cmd == "unsubscribe":
-        unsubscribe(arg)
+        for feed in feeddict.keys():
+            if shortened(arg, feed):
+                print("Unsubscribing from {0}.".format(feed.replace("&#39;","'")))
+                if yesno():
+                    unsubscribe(feed)
+                    break
+    elif cmd == "list":
+        listall()
     elif cmd == "help":
         displayhelp()
     elif cmd == "quit":

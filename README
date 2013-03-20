@@ -4,42 +4,65 @@ date: 3/19/13
 
 __________________________________Description__________________________________
 This program is a rudimentary RSS feed reader, to be run in a terminal command
-line. Can read Atom and RSS feeds.
+line. Can read Atom and RSS feeds. In addition, this reader can import your
+subscription list from Google Reader.
+
+__________________________Importing Google Reader Data_________________________
+Run the script with the keyword "import" and the subscriptions.xml file from 
+Google Reader. 
+
+Example: 
+./rss.py import ./[google-username]@gmail.com-takeout/Reader/subscriptions.xml
+                ____________________________________________
+                | Don't have your data from Google Reader? |
+                | Go to https://www.google.com/takeout/    |
+                | to download your Google Reader data.     |
+                --------------------------------------------
+
+Now, the program will transfer your Google Reader subscription file into a new
+file and format for this program to run. After that, it'll begin building a 
+read history file, and once that is complete, will display all new items, 
+followed by a prompt for regular runtime commands (listed in Usage section).
 
 _____________________________________Usage_____________________________________
-Run the script without any arguments (./rss.py) to start.
+Run the script without any arguments (./rss.py) to start a normal run.
 
 After the script is started, some initialization will occur, followed by a
 check of all the feeds that you are subscribed to.
 
 After that, a prompt will display. The following commands are accepted:
 
-'check [name]':      Typing this command without a [name] field results in the 
-                     reader checking all feeds for new updates.
-                     Typing a name will check all feeds for which [name] is a 
-                     substring of the feed title.
+'check [name]':      This command checks for new updates. With a name field, 
+                     it checks the feed named. Without a name field, it checks
+                     all feeds.
 
 'read {name}':       Typing this command requires a {name} field. This will
                      result in opening a page with the contents of the oldest
-                     item in the feed with {name} as a substring of the feed
-                     title.
+                     item in the feed named.
  
-'mark {name}':       This command simply marks an item as read without opening
-                     it. Same syntax as 'read'.
+'mark {name}':       This command marks an item as read without opening it.
 
-'markall {name}:     This command marks all items in the feed {name} as read.
+'markall [name]:     This command marks all items in the feed [name] as read.
+                     If no name is supplied, this marks all items from all 
+                     feeds read.
 
 'subscribe {url}':   Typing this command will add a new feed to your
                      subscription list, and this feed will be included in
                      every future check.
 
-'unsubscribe {name}: This command removes a feed from your subscription list.
-                     Requires typing the entire name of the feed, which is the
-                     name displayed whenever a 'check' is run for that feed.
+'unsubscribe {name}: This command removes a feed from your subscription list. 
 
-'help':              Displays a brief description of each command's usage.
+'list':              Displays a list of all feeds you're subscribed to.
+
+'help':              Displays a brief description of some commands' usage.
 
 'quit':              Exits the reader and returns to the shell.
+
+
+*For all feeds which require a feed name, any substring of the feed title will
+ work. Note, though, if your input is too vague, this may perform the action on
+ more than one feed. (i.e. Typing 'read e' will open all new items for every 
+ feed with an 'e' in the title)
 
 ____________________________________Options____________________________________
 User-defined options can be found in the script itself (rss.py) under the 
@@ -54,6 +77,5 @@ subscription_file:   This is the filename for your subscription list.
 
 history_file:        This is the filename for your read history.
 
-_____________________________Bugs & Idiosyncracies_____________________________
-3/19/13: Single quotes in feed titles are dropped, so feed titles such as 
-         "That's it" will display as "Thats it" everywhere within the program.
+updatelen:           How far back you want subscribe and newly built read
+                     histories to show items, in days.
