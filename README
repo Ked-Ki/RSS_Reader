@@ -1,6 +1,8 @@
 Terminal-Based RSS Reader 
 author: Kevin Freese
-date: 3/19/13
+date: 3/22/13
+
+Check www.github.com/Ked-Ki/RSS_Reader for updates!
 
 __________________________________Description__________________________________
 This program is a rudimentary RSS feed reader, to be run in a terminal command
@@ -39,6 +41,16 @@ After that, a prompt will display. The following commands are accepted:
 'read {name}':       Typing this command requires a {name} field. This will
                      result in opening a page with the contents of the oldest
                      item in the feed named.
+
+'readall [name]':    Just like read, except it opens pages for each of the
+                     unread items in the feed with [name]. If run without a
+                     [name], it reads all items in all feeds.
+
+'readitem {name}':   This command allows you to read a specific item in a 
+                     feed. After the command is read, a list of items in all
+                     feeds matching the query {name} will appear, with a
+                     number next to each. Type the number next to an item to
+                     read it.
  
 'mark {name}':       This command marks an item as read without opening it.
 
@@ -65,17 +77,15 @@ After that, a prompt will display. The following commands are accepted:
  feed with an 'e' in the title)
 
 ____________________________________Options____________________________________
-User-defined options can be found in the script itself (rss.py) under the 
-heading "User-defined Options:" These options include:
-
-data_folder:         This is the folder in which all the data for the reader is 
-                     stored. Absolute paths will obviously go to that path on 
-                     the drive. Relative paths or folder names without a path
-                     will be created from the directory the script is run from.
+All data for the program is saved in ~/.RSS_Reader_Data. Also in that directory
+is a file entitled options.py, which contain the following options:
 
 subscription_file:   This is the filename for your subscription list.
 
 history_file:        This is the filename for your read history.
+
+read_items_folder:   This is the folder where the html files for the items
+                     being read go. Always a subdirectory of ~/.RSS_Reader_Data
 
 updatelen:           How far back you want subscribe and newly built read
                      histories to show items, in days.

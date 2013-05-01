@@ -5,17 +5,13 @@ import urllib.error as err
 import urllib.request as URL
 import webbrowser as WEB
 import datetime as DT
-import subprocess
 import os
 import sys
 
-
-#----------------------------- User-defined Options: --------------------------
-# This section can and should be modified by the user:
-data_folder = ".RSS_Reader_Data/"
-subscription_file = "subscriptions.xml"
-history_file = "readhistory.xml"
-updatelen = 7
+# import configuration:
+data_folder = os.path.expanduser("~/.RSS_Reader_Data/")
+sys.path.append(data_folder)
+from options import *
 
 #---------------------------- Initializing the Program ------------------------
 xmlfeedlist = "{0}{1}".format(data_folder, subscription_file)
@@ -27,7 +23,13 @@ if os.path.isdir(data_folder):
     pass
 else:
     print("Data Folder '{0}' does not exist. Creating in current directory.".format(data_folder))
-    subprocess.call(["mkdir", "{0}".format(data_folder)])
+    os.mkdir(data_folder)
+
+if os.path.isdir(data_folder + read_items_folder):
+    pass
+else:
+    print("Data Folder '{0}' does not exist. Creating in current directory.".format(read_items_folder))
+    os.mkdir(data_folder + read_items_folder)
 
 # Google Reader Data Import
 if len(sys.argv) > 1 and sys.argv[1] == "import": 
@@ -57,7 +59,7 @@ if len(sys.argv) > 1 and sys.argv[1] == "import":
         elif page.tag == "rss":
             feed.attrib["type"] = "rss"
         else:
-            print("Unrecognized format for feed '{0}'.".format(feed), file=sys.stderr)
+            print("Unrecognized format for feed '{0}'.".format(feed))
             feedlist.remove(feed)
 else: 
     if os.path.isfile(xmlfeedlist):
@@ -213,12 +215,17 @@ def unsubscribe(feedname):
 
 def check(feedname, toreaddict):
     (url,feedtype) = feeddict[feedname]
+    print("Checking {0}...".format(feedname.replace("&#39;","'")))
     try:
         xmlpage = URL.urlopen(url)
     except err.URLError:
         print("No service. Please check network connection.")
         return
-    page = ET.parse(xmlpage).getroot() 
+    try:
+        page = ET.parse(xmlpage).getroot() 
+    except ET.ParseError:
+        print("Error in rss feed '{0}'.\n    (URL: {1})".format(feedname,url))
+        return
     curfeed = feedhist.find("./feed[@title='{0}']".format(feedname))
     unreadcount = 0
     readitems = []
@@ -252,7 +259,10 @@ def check(feedname, toreaddict):
                 # filling newitem with data
                 newtitle.text = title
                 newlink.text = item.find("./{0}link".format(atom)).get("href")
-                newcontent.text = item.findtext("./{0}content".format(atom))
+                checkcontent = item.findtext("./{0}content".format(atom))
+                if not checkcontent:
+                    checkcontent = item.findtext("./{0}summary".format(atom))
+                newcontent.text = checkcontent
                 # putting newitem into unread items list
                 unreaditems.append(newitem)
     else:
@@ -260,14 +270,18 @@ def check(feedname, toreaddict):
         return
 
     toreaddict[feedname] = unreaditems
+
+def showcheck(feedname, toreaddict):
+    unreadcount = len(toreaddict[feedname])
     if unreadcount > 0:
         print(feedname.replace("&#39;","'"), ": Unread:", unreadcount)
         for item in toreaddict[feedname]:
-            print ("    ", item.findtext("./title"))
+            print ("    ", item.findtext("./title").replace("&#8217;","'"))
+    else:
+        print("No New Items for {0}.".format(feedname.replace("&#39;","'")))
    
-
-def read(feedname): 
-    curitem = markread(feedname)
+def read(feedname, count=1, itemname=None): 
+    curitem = markread(feedname, itemname)
     if curitem:
         # code to handle one weird type of rss feed I found
         content = curitem.findtext("./{http://purl.org/rss/1.0/modules/content/}encoded")
@@ -277,35 +291,45 @@ def read(feedname):
         title = curitem.findtext("./title")
         link = curitem.findtext("./link")
         # handling partial links (only for page title links).
-        if link.startswith("http://"):
+        if link.strip().startswith("http://"):
             pass
         else:
             urlhead = feedlist.find("./feed[@title='{0}']".format(feedname)).get("htmlUrl")
             link = urlhead + link
 
         # writes the content to a html file, then opens it in browser.
-        f = open('{0}readitem.html'.format(data_folder), 'w')
+        f = open('{0}{1}readitem{2}.html'.format(data_folder, read_items_folder, count), 'w')
         print(htmlhead.format(title, link, feedname), content, htmlend, file=f)
         # stdout handling; blocks output from browser to stdout
         devnull = open('/dev/null', 'w')
         oldstdout_fno = os.dup(sys.stdout.fileno())
         os.dup2(devnull.fileno(), 1)
-        WEB.open('{0}readitem.html'.format(data_folder))
+        WEB.open('{0}{1}readitem{2}.html'.format(data_folder, read_items_folder, count))
         os.dup2(oldstdout_fno, 1)
+        f.close()
     else:
         print("No New Items for {0}.".format(feedname.replace("&#39;","'")))
 
-def markread(feedname):
+def markread(feedname, itemname=None):
     curfeed = toreaddict[feedname]
-    if curfeed:
-        curitem = curfeed.pop()
-        # add read item to feedhist
-        curfeedhist = feedhist.find("./feed[@title='{0}']".format(feedname))
-        itemhist = ET.SubElement(curfeedhist, "item")
-        itemhist.attrib["title"] = curitem.findtext("./title")
-        return curitem
-    else:
-        return None
+    if itemname:
+        for item in curfeed:
+            if itemname == item.findtext("./title"):
+                curitem = item
+                curfeed.remove(item)
+        if not curitem:
+            print("Item '{0}' not in feed {1}.".format(itemname, feedname))
+            return None
+    else: 
+        if curfeed:
+            curitem = curfeed.pop() 
+        else:
+            return None
+    # add read item to feedhist
+    curfeedhist = feedhist.find("./feed[@title='{0}']".format(feedname))
+    itemhist = ET.SubElement(curfeedhist, "item")
+    itemhist.attrib["title"] = curitem.findtext("./title")
+    return curitem
 
 def displayhelp():
     print("Type 'check' to check all feeds.")
@@ -315,8 +339,11 @@ def displayhelp():
     print("See readme for more information and commands.")
 
 def checkall():
-    for feed in feeddict.keys(): 
+    for feed in feeddict.keys():
         check(feed, toreaddict)
+    for feed in feeddict.keys():
+        if len(toreaddict[feed]) > 0:
+            showcheck(feed, toreaddict)
 
 def markall(feedname):
     unreadcount = len(toreaddict[feedname])
@@ -326,8 +353,11 @@ def markall(feedname):
         i += 1
 
 def listall():
+    i = 0
     for feed in feeddict.keys():
         print(feed.replace("&#39;","'"))
+        i += 1
+    print("\nTotal Count: {0}".format(i))
 
 #------------------------ Command Prompt Utilities ----------------------------
 def readprompt(): 
@@ -337,10 +367,9 @@ def readprompt():
 def shortened(sword, lword):
     return sword.lower() in lword.lower()
 
-def yesno():
-    yesno = input("Are you sure? (y/n) ")
+def yesno(prompt):
+    yesno = input("{0} (y/n) ".format(prompt))
     return yesno.startswith("y")
-
 
 #------------------------ Main runtime of program -----------------------------
 checkall()
@@ -348,18 +377,54 @@ exit = False
 while not exit:
     cmd,arg = readprompt()
     if cmd == "read":
+        count = 1
         for feed in feeddict.keys():
             if shortened(arg, feed):
-                read(feed)
+                read(feed, count)
+                count += 1
+    elif cmd == "readall":
+        count = 1
+        if arg:
+            for feed in feeddict.keys():
+                if shortened(arg, feed):
+                    while toreaddict[feed]:
+                        read(feed, count)
+                        count += 1
+        else:
+            print("About to read all items from ALL feeds.")
+            if yesno("Are you sure?"):
+                for feed in feeddict.keys():
+                    while toreaddict[feed]:
+                        read(feed, count)
+                        count += 1
+    elif cmd == "readitem":
+        itemlist = []
+        count = 1
+        print("Unread items matching query:")
+        for feed in feeddict.keys():
+            if shortened(arg, feed):
+                for item in toreaddict[feed]:
+                    itemname = item.findtext("./title")
+                    print("    [{0}]: {1}".format(count, itemname))
+                    itemlist.append((itemname, feed))
+                    count += 1
+        try:
+            choice = int(input("Please select item: "))
+        except ValueError:
+            print("Number argument expected. Returning to main prompt.")
+            continue
+        try:
+            readitem = itemlist[choice-1]
+        except IndexError:
+            print("Number not in choices. Returning to main prompt.")
+            continue
+        read(readitem[1], 1, readitem[0])
     elif cmd == "check":
         if arg:
             for feed in feeddict.keys():
                 if shortened(arg, feed):
                     check(feed, toreaddict)
-                    if toreaddict[feed]:
-                        pass
-                    else:
-                        print("No New Items for {0}.".format(feed.replace("&#39;","'")))
+                    showcheck(feed, toreaddict)
         else:
             checkall()
     elif cmd == "mark":
@@ -373,7 +438,7 @@ while not exit:
                     markall(feed)
         else:
             print("Marking ALL items from ALL feeds read!")
-            if yesno():
+            if yesno("Are you sure?"):
                 for feed in feeddict.keys():
                     markall(feed)
     elif cmd == "subscribe":
@@ -382,7 +447,7 @@ while not exit:
         for feed in feeddict.keys():
             if shortened(arg, feed):
                 print("Unsubscribing from {0}.".format(feed.replace("&#39;","'")))
-                if yesno():
+                if yesno("Are you sure?"):
                     unsubscribe(feed)
                     break
     elif cmd == "list":
@@ -396,7 +461,6 @@ while not exit:
         print("Unrecognized command '{0}'. Type 'help' for more info.".format(cmd))
 
 #---------------------- End of program run ------------------------------------
-
 # saving changes 
 ET.ElementTree(feedhist).write(filefeedhist)
 ET.ElementTree(feedlist).write(xmlfeedlist) 
